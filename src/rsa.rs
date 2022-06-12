@@ -46,28 +46,33 @@ impl RSA2048 {
         let e = BigInt::from_signed_bytes_be(&[0x01,0x00,0x01]);
 
         let mut rng = rand::thread_rng();
-        let mut p = rng.gen_biguint(1024);
+        let low = BigUint::parse_bytes(b"8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",16).unwrap();
+        let hight = low.clone() << 1;
+        let mut p = rng.gen_biguint_range(&low, &hight);
         while !is_prime(&p) {
-            p = rng.gen_biguint(1024);
+            p = rng.gen_biguint_range(&low, &hight);
         }
         let p = BigInt::from_biguint(Sign::Plus, p);
-        let mut q = rng.gen_biguint(1024);
+        let mut q = rng.gen_biguint_range(&low, &hight);
         while !is_prime(&q) {
-            q = rng.gen_biguint(1024);
+            q = rng.gen_biguint_range(&low, &hight);
         }
         let q = BigInt::from_biguint(Sign::Plus, q);
 
+        let n = &p*&q;
         let d = inv(&e,&((&p - 1u8) * (&q - 1u8))).0;
+        let exponent1 = &d % (&p - 1u8);
+        let exponent2 = &d % (&q - 1u8);
+        let coefficient = inv(&q,&p).0;
 
-        let n = (&p*&q).to_bytes_be().1;
-        let exponent1 = (&d % (&p - 1u8)).to_bytes_be().1;
-        let exponent2 = (&d % (&q - 1u8)).to_bytes_be().1;
-        let coefficient = (inv(&q,&p).0).to_bytes_be().1;
-
-        let e = e.to_bytes_be().1;
-        let d = d.to_bytes_be().1;
-        let p = p.to_bytes_be().1;
-        let q = q.to_bytes_be().1;
+        let n = to_vec_util(n);
+        let e = to_vec_util(e);
+        let d = to_vec_util(d);
+        let p = to_vec_util(p);
+        let q = to_vec_util(q);
+        let exponent1 = to_vec_util(exponent1);
+        let exponent2 = to_vec_util(exponent2);
+        let coefficient = to_vec_util(coefficient);
 
         RSA2048{
             version,
@@ -156,3 +161,12 @@ fn is_prime(n: &BigUint) -> bool {
     true
 }
 
+fn to_vec_util(x: BigInt) -> Vec<u8> {
+    let mut out = Vec::new();
+    let x = x.to_bytes_be().1;
+    if x[0] & 0x80 != 0 {
+        out.push(0);
+    }
+    out.extend(x);
+    out
+}

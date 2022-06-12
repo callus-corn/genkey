@@ -15,11 +15,11 @@ pub struct PKCS8 {
 
 impl PKCS8 {
     pub const V1: u8 = 0;
-    pub fn new(pkcs8: (u8, Vec<u8>, Vec<u8>)) -> Self{
+    pub fn new(version: u8, private_key_algorithm: Vec<u8>, private_key: Vec<u8>) -> Self{
         PKCS8{
-            version: pkcs8.0,
-            private_key_algorithm: pkcs8.1,
-            private_key: pkcs8.2,
+            version,
+            private_key_algorithm,
+            private_key,
         }
     }
 }
