@@ -7,7 +7,6 @@ pub trait PEM {
 
 impl PEM for Vec<u8> {
     fn base64(&self) -> Vec<u8> {
-        // br#"string"# is raw byte string
         let base64_table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         let mut out = Vec::new();
         // 8 8 8 bit -> 6 6 6 6 bit

@@ -1,6 +1,7 @@
 use num_bigint::{BigUint, BigInt, Sign, RandBigInt};
 use num_traits::{One, Zero};
 use crate::der::{TLV, Tag, DER};
+use crate::ssh::{SSH, SSHEncode};
 
 // RFC 8017 Appendix A
 // RSAPrivateKey ::= SEQUENCE {
@@ -40,14 +41,16 @@ impl RSA2048 {
     // pkcs-1 OBJECT IDENTIFIER ::= { 1.2.840.113549.1.1 }
     // Parameters field shall have a value of type NULL
     pub const ID: [u8; 15] = [0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00];
+    const VERSION: u8 = 0;
+    const E: [u8; 3] = [0x01,0x00,0x01];
 
     pub fn new() -> Self {
-        let version = 0;
-        let e = BigInt::from_signed_bytes_be(&[0x01,0x00,0x01]);
+        let version = RSA2048::VERSION;
+        let e = BigInt::from_signed_bytes_be(&RSA2048::E);
 
         let mut rng = rand::thread_rng();
         let low = BigUint::parse_bytes(b"8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",16).unwrap();
-        let hight = low.clone() << 1;
+        let hight = low.clone() << 1u8;
         let mut p = rng.gen_biguint_range(&low, &hight);
         while !is_prime(&p) {
             p = rng.gen_biguint_range(&low, &hight);
@@ -60,10 +63,44 @@ impl RSA2048 {
         let q = BigInt::from_biguint(Sign::Plus, q);
 
         let n = &p*&q;
-        let d = inv(&e,&((&p - 1u8) * (&q - 1u8))).0;
+        let d = inv(&e,&((&p - 1u8) * (&q - 1u8)));
         let exponent1 = &d % (&p - 1u8);
         let exponent2 = &d % (&q - 1u8);
-        let coefficient = inv(&q,&p).0;
+        let coefficient = inv(&q,&p) % &p;
+
+        let n = to_vec_util(n);
+        let e = to_vec_util(e);
+        let d = to_vec_util(d);
+        let p = to_vec_util(p);
+        let q = to_vec_util(q);
+        let exponent1 = to_vec_util(exponent1);
+        let exponent2 = to_vec_util(exponent2);
+        let coefficient = to_vec_util(coefficient);
+
+        RSA2048{
+            version,
+            n,
+            e,
+            d,
+            p,
+            q,
+            exponent1,
+            exponent2,
+            coefficient,
+        }
+    }
+
+    pub fn from_private_key(p: Vec<u8>, q: Vec<u8>) -> Self {
+        let version = RSA2048::VERSION;
+        let e = BigInt::from_signed_bytes_be(&RSA2048::E);
+
+        let p = BigInt::from_signed_bytes_be(&p);
+        let q = BigInt::from_signed_bytes_be(&q);
+        let n = &p*&q;
+        let d = inv(&e,&((&p - 1u8) * (&q - 1u8)));
+        let exponent1 = &d % (&p - 1u8);
+        let exponent2 = &d % (&q - 1u8);
+        let coefficient = inv(&q,&p) % &p;
 
         let n = to_vec_util(n);
         let e = to_vec_util(e);
@@ -105,11 +142,55 @@ impl DER for RSA2048 {
     }
 }
 
-fn inv(a: &BigInt, b:&BigInt) -> (BigInt, BigInt) {
+impl SSHEncode for RSA2048 {
+    fn gen_ssh_public_key(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend(SSH::to_string(b"ssh-rsa"));
+        out.extend(SSH::to_string(&self.e.clone()));
+        out.extend(SSH::to_string(&self.n.clone()));
+
+        out
+    }
+
+    fn gen_ssh_private_key(&self) -> Vec<u8> {
+        let checkint = [0x97,0xb3,0x7a,0xbb];
+
+        let mut out = Vec::new();
+        out.extend(checkint.clone());
+        out.extend(checkint);
+        out.extend(SSH::to_string(b"ssh-rsa"));
+        out.extend(SSH::to_string(&self.n.clone()));
+        out.extend(SSH::to_string(&self.e.clone()));
+        out.extend(SSH::to_string(&self.d.clone()));
+        out.extend(SSH::to_string(&self.coefficient.clone()));
+        out.extend(SSH::to_string(&self.p.clone()));
+        out.extend(SSH::to_string(&self.q.clone()));
+        out.extend(SSH::to_string(b"yamazaki@MyComputer"));
+        for i in 1..8 {
+            if out.len() % 8 == 0 {
+                break;
+            }
+            out.push(i as u8);
+        }
+
+
+        out
+    }
+}
+
+fn inv(a: &BigInt, b:&BigInt) -> BigInt {
+    let mut x = gcd(a,b).0;
+    while x < BigInt::zero() {
+        x = x + b;
+    }
+    x
+}
+
+fn gcd(a: &BigInt, b:&BigInt) -> (BigInt, BigInt) {
     if *b == BigInt::zero() {
         return (BigInt::one(), BigInt::zero());
     }
-    let d = inv(b, &(a%b));
+    let d = gcd(b, &(a%b));
     let x = d.1;
     let y = d.0 - (a/b)*&x;
     (x, y)
