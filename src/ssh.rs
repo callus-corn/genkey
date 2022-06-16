@@ -1,8 +1,9 @@
+use rand::prelude::*;
 use crate::pem::PEM;
 
 pub trait SSHEncode{
     fn gen_ssh_public_key(&self) -> Vec<u8>;
-    fn gen_ssh_private_key(&self) -> Vec<u8>;
+    fn gen_ssh_private_key(&self, checkint: Vec<u8>) -> Vec<u8>;
 }
 
 pub struct SSH{
@@ -15,8 +16,22 @@ impl SSH {
     const AUTH_MAGIC: [u8; 15] = [0x6f,0x70,0x65,0x6e,0x73,0x73,0x68,0x2d,0x6b,0x65,0x79,0x2d,0x76,0x31,0x00];
 
     pub fn new(key: &dyn SSHEncode) -> Self {
+        let mut checkint = Vec::new();
+        let mut rng = rand::thread_rng();
+        for _ in 0..4 {
+            checkint.push(rng.gen());
+        }
         let public_key = key.gen_ssh_public_key();
-        let private_key = key.gen_ssh_private_key();
+        let private_key = key.gen_ssh_private_key(checkint);
+        SSH {
+            public_key,
+            private_key,
+        }
+    }
+
+    pub fn with_checkint(key: &dyn SSHEncode, checkint: Vec<u8>) -> Self {
+        let public_key = key.gen_ssh_public_key();
+        let private_key = key.gen_ssh_private_key(checkint);
         SSH {
             public_key,
             private_key,

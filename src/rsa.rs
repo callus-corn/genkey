@@ -46,27 +46,26 @@ impl RSA2048 {
 
     pub fn new() -> Self {
         let version = RSA2048::VERSION;
-        let e = BigInt::from_signed_bytes_be(&RSA2048::E);
+        let e = BigUint::from_bytes_be(&RSA2048::E);
 
         let mut rng = rand::thread_rng();
         let low = BigUint::parse_bytes(b"8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",16).unwrap();
         let hight = low.clone() << 1u8;
+
         let mut p = rng.gen_biguint_range(&low, &hight);
         while !is_prime(&p) {
             p = rng.gen_biguint_range(&low, &hight);
         }
-        let p = BigInt::from_biguint(Sign::Plus, p);
         let mut q = rng.gen_biguint_range(&low, &hight);
         while !is_prime(&q) {
             q = rng.gen_biguint_range(&low, &hight);
         }
-        let q = BigInt::from_biguint(Sign::Plus, q);
 
         let n = &p*&q;
-        let d = inv(&e,&((&p - 1u8) * (&q - 1u8)));
+        let d = inv(&e, &((&p - 1u8) * (&q - 1u8)));
         let exponent1 = &d % (&p - 1u8);
         let exponent2 = &d % (&q - 1u8);
-        let coefficient = inv(&q,&p) % &p;
+        let coefficient = inv(&q, &p) % &p;
 
         let n = to_vec_util(n);
         let e = to_vec_util(e);
@@ -92,10 +91,10 @@ impl RSA2048 {
 
     pub fn from_private_key(p: Vec<u8>, q: Vec<u8>) -> Self {
         let version = RSA2048::VERSION;
-        let e = BigInt::from_signed_bytes_be(&RSA2048::E);
+        let e = BigUint::from_bytes_be(&RSA2048::E);
 
-        let p = BigInt::from_signed_bytes_be(&p);
-        let q = BigInt::from_signed_bytes_be(&q);
+        let p = BigUint::from_bytes_be(&p);
+        let q = BigUint::from_bytes_be(&q);
         let n = &p*&q;
         let d = inv(&e,&((&p - 1u8) * (&q - 1u8)));
         let exponent1 = &d % (&p - 1u8);
@@ -152,9 +151,7 @@ impl SSHEncode for RSA2048 {
         out
     }
 
-    fn gen_ssh_private_key(&self) -> Vec<u8> {
-        let checkint = [0x97,0xb3,0x7a,0xbb];
-
+    fn gen_ssh_private_key(&self, checkint: Vec<u8>) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend(checkint.clone());
         out.extend(checkint);
@@ -178,12 +175,14 @@ impl SSHEncode for RSA2048 {
     }
 }
 
-fn inv(a: &BigInt, b:&BigInt) -> BigInt {
-    let mut x = gcd(a,b).0;
+fn inv(a: &BigUint, b:&BigUint) -> BigUint {
+    let a = BigInt::from_biguint(Sign::Plus, a.clone());
+    let b = BigInt::from_biguint(Sign::Plus, b.clone());
+    let mut x = gcd(&a, &b).0;
     while x < BigInt::zero() {
-        x = x + b;
+        x = x + &b;
     }
-    x
+    x.to_biguint().unwrap()
 }
 
 fn gcd(a: &BigInt, b:&BigInt) -> (BigInt, BigInt) {
@@ -242,9 +241,9 @@ fn is_prime(n: &BigUint) -> bool {
     true
 }
 
-fn to_vec_util(x: BigInt) -> Vec<u8> {
+fn to_vec_util(x: BigUint) -> Vec<u8> {
     let mut out = Vec::new();
-    let x = x.to_bytes_be().1;
+    let x = x.to_bytes_be();
     if x[0] & 0x80 != 0 {
         out.push(0);
     }
