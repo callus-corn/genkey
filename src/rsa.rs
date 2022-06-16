@@ -162,7 +162,7 @@ impl SSHEncode for RSA2048 {
         out.extend(SSH::to_string(&self.coefficient.clone()));
         out.extend(SSH::to_string(&self.p.clone()));
         out.extend(SSH::to_string(&self.q.clone()));
-        out.extend(SSH::to_string(b"yamazaki@MyComputer"));
+        out.extend(SSH::to_string(b""));
         for i in 1..8 {
             if out.len() % 8 == 0 {
                 break;
