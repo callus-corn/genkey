@@ -3,8 +3,11 @@ use rand::prelude::*;
 use num_bigint::{BigUint, BigInt, Sign};
 use num_traits::{Zero, One};
 use sha2::{Sha512, Digest};
-use crate::der::{TLV, Tag, DER};
-use crate::ssh::{SSH, SSHEncode};
+use crate::der;
+use crate::der::{Tag, DerEncode};
+use crate::ssh;
+use crate::ssh::SshFormat;
+use crate::pkcs8::Pkcs8Format;
 
 #[derive(Clone)]
 struct Point {
@@ -81,9 +84,6 @@ impl Ed25519 {
         for _ in 0..32 {
             private_key.push(rng.gen());
         }
-        while private_key[0] < 0x80 {
-            private_key[0] = rng.gen();
-        }
         Ed25519{
             private_key
         }
@@ -110,7 +110,7 @@ impl Ed25519 {
         'to_bin: for (i, v) in buffer.iter().enumerate() {
             let mut byte = *v;
             for _ in 0..8 {
-                if i == buffer.len() -1 && byte == 1 {
+                if i == buffer.len() - 1 && byte == 1 {
                     break 'to_bin;
                 }
                 bin.push(byte % 2);
@@ -134,23 +134,20 @@ impl Ed25519 {
 
 }
 
-impl DER for Ed25519 {
-    fn der(&self) -> Vec<u8> {
-        TLV::new(Tag::OctetString, self.private_key.clone()).der()
-    }
-}
-
-impl SSHEncode for Ed25519 {
-    fn gen_ssh_public_key(&self) -> Vec<u8> {
+impl SshFormat for Ed25519 {
+    fn gen_public_key(&self) -> Vec<u8> {
         let public_key = self.gen_public_key();
+
         let mut out = Vec::new();
-        out.extend(SSH::to_string(b"ssh-ed25519"));
-        out.extend(SSH::to_string(&public_key));
+        out.extend(ssh::to_string(b"ssh-ed25519"));
+        out.extend(ssh::to_string(&public_key));
 
         out
     }
 
-    fn gen_ssh_private_key(&self, checkint: Vec<u8>) -> Vec<u8> {
+    fn gen_private_key(&self, checkint: u32, comment: String) -> Vec<u8> {
+        let checkint = checkint.to_be_bytes();
+        let comment = comment.as_bytes().to_vec();
         let public_key = self.gen_public_key();
         let mut ssh_private_key = self.private_key.clone();
         ssh_private_key.extend(public_key.clone());
@@ -158,10 +155,10 @@ impl SSHEncode for Ed25519 {
         let mut out = Vec::new();
         out.extend(checkint.clone());
         out.extend(checkint);
-        out.extend(SSH::to_string(b"ssh-ed25519"));
-        out.extend(SSH::to_string(&public_key));
-        out.extend(SSH::to_string(&ssh_private_key));
-        out.extend(SSH::to_string(b""));
+        out.extend(ssh::to_string(b"ssh-ed25519"));
+        out.extend(ssh::to_string(&public_key));
+        out.extend(ssh::to_string(&ssh_private_key));
+        out.extend(ssh::to_string(&comment));
         for i in 1..8 {
             if out.len() % 8 == 0 {
                 break;
@@ -173,6 +170,21 @@ impl SSHEncode for Ed25519 {
     }
 }
 
+impl DerEncode for Ed25519 {
+    fn to_der(&self) -> Vec<u8> {
+        der::encode(Tag::OctetString, self.private_key.clone())
+    }
+}
+
+impl Pkcs8Format for Ed25519 {
+    fn gen_algorithm_identifier(&self) -> Vec<u8> {
+        Ed25519::ID.to_vec()
+    }
+
+    fn gen_private_key(&self) -> Vec<u8> {
+        self.to_der()
+    }
+}
 
 fn inv(a: &BigUint, b:&BigUint) -> BigUint {
     let a = BigInt::from_biguint(Sign::Plus, a.clone());

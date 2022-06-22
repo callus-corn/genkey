@@ -1,7 +1,11 @@
 use num_bigint::{BigUint, BigInt, Sign, RandBigInt};
 use num_traits::{One, Zero};
-use crate::der::{TLV, Tag, DER};
-use crate::ssh::{SSH, SSHEncode};
+use crate::der;
+use crate::der::{Tag, DerEncode};
+use crate::ssh;
+use crate::ssh::SshFormat;
+use crate::pkcs8::Pkcs8Format;
+use crate::pem::{base64, PemEncode};
 
 // RFC 8017 Appendix A
 // RSAPrivateKey ::= SEQUENCE {
@@ -16,7 +20,7 @@ use crate::ssh::{SSH, SSHEncode};
 //   coefficient       INTEGER,  -- (inverse of q) mod p
 //   otherPrimeInfos   OtherPrimeInfos OPTIONAL
 // }
-pub struct RSA2048 {
+pub struct Rsa2048 {
     version: u8,
     n: Vec<u8>,
     e: Vec<u8>,
@@ -28,7 +32,7 @@ pub struct RSA2048 {
     coefficient: Vec<u8>,
 }
 
-impl RSA2048 {
+impl Rsa2048 {
     // RFC 8017 Appendix C
     // AlgorithmIdentifier ::= {
     //   SEQUENCE {
@@ -45,8 +49,8 @@ impl RSA2048 {
     const E: [u8; 3] = [0x01,0x00,0x01];
 
     pub fn new() -> Self {
-        let version = RSA2048::VERSION;
-        let e = BigUint::from_bytes_be(&RSA2048::E);
+        let version = Rsa2048::VERSION;
+        let e = BigUint::from_bytes_be(&Rsa2048::E);
 
         let mut rng = rand::thread_rng();
         let low = BigUint::parse_bytes(b"8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",16).unwrap();
@@ -67,16 +71,16 @@ impl RSA2048 {
         let exponent2 = &d % (&q - 1u8);
         let coefficient = inv(&q, &p) % &p;
 
-        let n = to_vec_util(n);
-        let e = to_vec_util(e);
-        let d = to_vec_util(d);
-        let p = to_vec_util(p);
-        let q = to_vec_util(q);
-        let exponent1 = to_vec_util(exponent1);
-        let exponent2 = to_vec_util(exponent2);
-        let coefficient = to_vec_util(coefficient);
+        let n = n.to_bytes_be();
+        let e = e.to_bytes_be();
+        let d = d.to_bytes_be();
+        let p = p.to_bytes_be();
+        let q = q.to_bytes_be();
+        let exponent1 = exponent1.to_bytes_be();
+        let exponent2 = exponent2.to_bytes_be();
+        let coefficient = coefficient.to_bytes_be();
 
-        RSA2048{
+        Rsa2048{
             version,
             n,
             e,
@@ -90,8 +94,8 @@ impl RSA2048 {
     }
 
     pub fn from_private_key(p: Vec<u8>, q: Vec<u8>) -> Self {
-        let version = RSA2048::VERSION;
-        let e = BigUint::from_bytes_be(&RSA2048::E);
+        let version = Rsa2048::VERSION;
+        let e = BigUint::from_bytes_be(&Rsa2048::E);
 
         let p = BigUint::from_bytes_be(&p);
         let q = BigUint::from_bytes_be(&q);
@@ -101,16 +105,16 @@ impl RSA2048 {
         let exponent2 = &d % (&q - 1u8);
         let coefficient = inv(&q,&p) % &p;
 
-        let n = to_vec_util(n);
-        let e = to_vec_util(e);
-        let d = to_vec_util(d);
-        let p = to_vec_util(p);
-        let q = to_vec_util(q);
-        let exponent1 = to_vec_util(exponent1);
-        let exponent2 = to_vec_util(exponent2);
-        let coefficient = to_vec_util(coefficient);
+        let n = der::to_integer(n.to_bytes_be());
+        let e = der::to_integer(e.to_bytes_be());
+        let d = der::to_integer(d.to_bytes_be());
+        let p = der::to_integer(p.to_bytes_be());
+        let q = der::to_integer(q.to_bytes_be());
+        let exponent1 = der::to_integer(exponent1.to_bytes_be());
+        let exponent2 = der::to_integer(exponent2.to_bytes_be());
+        let coefficient = der::to_integer(coefficient.to_bytes_be());
 
-        RSA2048{
+        Rsa2048{
             version,
             n,
             e,
@@ -124,45 +128,31 @@ impl RSA2048 {
     }
 }
 
-impl DER for RSA2048 {
-    fn der(&self) -> Vec<u8> {
-        let mut value = Vec::new();
-        value.extend(TLV::new(Tag::Integer, vec![self.version]).der());
-        value.extend(TLV::new(Tag::Integer, self.n.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.e.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.d.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.p.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.q.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.exponent1.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.exponent2.clone()).der());
-        value.extend(TLV::new(Tag::Integer, self.coefficient.clone()).der());
-
-        TLV::new(Tag::Sequence, value).der()
-    }
-}
-
-impl SSHEncode for RSA2048 {
-    fn gen_ssh_public_key(&self) -> Vec<u8> {
+impl SshFormat for Rsa2048 {
+    fn gen_public_key(&self) -> Vec<u8> {
         let mut out = Vec::new();
-        out.extend(SSH::to_string(b"ssh-rsa"));
-        out.extend(SSH::to_string(&self.e.clone()));
-        out.extend(SSH::to_string(&self.n.clone()));
+        out.extend(ssh::to_string(b"ssh-rsa"));
+        out.extend(ssh::to_string(&self.e.clone()));
+        out.extend(ssh::to_string(&self.n.clone()));
 
         out
     }
 
-    fn gen_ssh_private_key(&self, checkint: Vec<u8>) -> Vec<u8> {
+    fn gen_private_key(&self, checkint: u32, comment: String) -> Vec<u8> {
+        let checkint = checkint.to_be_bytes();
+        let comment = comment.as_bytes().to_vec();
+
         let mut out = Vec::new();
         out.extend(checkint.clone());
         out.extend(checkint);
-        out.extend(SSH::to_string(b"ssh-rsa"));
-        out.extend(SSH::to_string(&self.n.clone()));
-        out.extend(SSH::to_string(&self.e.clone()));
-        out.extend(SSH::to_string(&self.d.clone()));
-        out.extend(SSH::to_string(&self.coefficient.clone()));
-        out.extend(SSH::to_string(&self.p.clone()));
-        out.extend(SSH::to_string(&self.q.clone()));
-        out.extend(SSH::to_string(b""));
+        out.extend(ssh::to_string(b"ssh-rsa"));
+        out.extend(ssh::to_string(&self.n.clone()));
+        out.extend(ssh::to_string(&self.e.clone()));
+        out.extend(ssh::to_string(&self.d.clone()));
+        out.extend(ssh::to_string(&self.coefficient.clone()));
+        out.extend(ssh::to_string(&self.p.clone()));
+        out.extend(ssh::to_string(&self.q.clone()));
+        out.extend(ssh::to_string(&comment));
         for i in 1..8 {
             if out.len() % 8 == 0 {
                 break;
@@ -170,7 +160,53 @@ impl SSHEncode for RSA2048 {
             out.push(i as u8);
         }
 
+        out
+    }
+}
 
+impl DerEncode for Rsa2048 {
+    fn to_der(&self) -> Vec<u8> {
+        let mut value = Vec::new();
+        value.extend(der::encode(Tag::Integer, vec![self.version]));
+        value.extend(der::encode(Tag::Integer, self.n.clone()));
+        value.extend(der::encode(Tag::Integer, self.e.clone()));
+        value.extend(der::encode(Tag::Integer, self.d.clone()));
+        value.extend(der::encode(Tag::Integer, self.p.clone()));
+        value.extend(der::encode(Tag::Integer, self.q.clone()));
+        value.extend(der::encode(Tag::Integer, self.exponent1.clone()));
+        value.extend(der::encode(Tag::Integer, self.exponent2.clone()));
+        value.extend(der::encode(Tag::Integer, self.coefficient.clone()));
+
+        der::encode(Tag::Sequence, value)
+    }
+}
+
+impl Pkcs8Format for Rsa2048 {
+    fn gen_algorithm_identifier(&self) -> Vec<u8> {
+        Rsa2048::ID.to_vec()
+    }
+
+    fn gen_private_key(&self) -> Vec<u8> {
+        self.to_der()
+    }
+}
+
+impl PemEncode for Rsa2048 {
+    fn to_pem(&self) -> Vec<u8> {
+        let mut base64_with_linefeed = Vec::new();
+        let base64 = base64(self.to_der());
+        for i in 0..base64.len() {
+            if i > 0 && i % 64 == 0 {
+                base64_with_linefeed.extend(b"\n");
+            }
+            base64_with_linefeed.push(base64[i]);
+        }
+
+        let mut out = Vec::new();
+        out.extend(b"-----BEGIN PRIVATE KEY-----\n");
+        out.extend(base64_with_linefeed);
+        out.extend(b"\n-----END PRIVATE KEY-----\n");
+        
         out
     }
 }
@@ -239,14 +275,4 @@ fn is_prime(n: &BigUint) -> bool {
         return false
     }
     true
-}
-
-fn to_vec_util(x: BigUint) -> Vec<u8> {
-    let mut out = Vec::new();
-    let x = x.to_bytes_be();
-    if x[0] & 0x80 != 0 {
-        out.push(0);
-    }
-    out.extend(x);
-    out
 }
