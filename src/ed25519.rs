@@ -127,7 +127,7 @@ impl Ed25519 {
         }
 
         let mut out = point.y;
-        out[0] = out[0] | ((point.x[31] & 1) << 7);
+        out[0] = out[0] | (point.x[31] & 0x80);
 
         out.iter().rev().map(|&s| s).collect()
     }
